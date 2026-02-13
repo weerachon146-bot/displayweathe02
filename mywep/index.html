@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Display satellite and weather information.</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Montserrat:wght@700&display=swap" rel="stylesheet">
+<style>
+:root {
+    --glass: rgba(255, 255, 255, 0.9);
+    --primary: #6366f1;
+    --success: #10b981;
+    --danger: #f43f5e;
+    --info: #0ea5e9;
+    --warning: #f59e0b;
+    --text-dark: #1e293b;
+}
+body {
+    font-family: 'Sarabun', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-attachment: fixed;
+    margin: 0;
+    padding: 20px;
+    color: var(--text-dark);
+    display: flex;
+    justify-content: center;
+}
+.weather-link-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    transition: 0.3s;
+    z-index: 9999;
+}
+.weather-link-btn:hover {
+    transform: translateY(-3px) scale(1.05);
+}
+.weather-link-btn svg {
+    width: 30px;
+    height: 30px;
+}
+.app-container {
+    max-width: 1100px;
+    width: 100%;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border-radius: 30px;
+    padding: 40px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+header h1 {
+    font-family: 'Montserrat', sans-serif;
+    margin: 0;
+    font-size: 32px;
+    background: linear-gradient(to right, #4f46e5, #9333ea);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.config-panel {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    background: rgba(255, 255, 255, 0.5);
+    padding: 20px;
+    border-radius: 20px;
+    margin-bottom: 30px;
+    align-items: flex-end;
+    border: 1px solid white;
+}
+.input-group { display: flex; flex-direction: column; gap: 8px; }
+label { font-weight: 600; font-size: 14px; color: #4b5563; }
+input {
+    padding: 12px;
+    border-radius: 12px;
+    border: 2px solid #e2e8f0;
+    outline: none;
+}
+.btn-analyze {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 14px 28px;
+    border-radius: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+.btn-analyze:hover { transform: translateY(-2px); }
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+.stat-card {
+    background: white;
+    padding: 20px;
+    border-radius: 20px;
+    text-align: center;
+}
+.stat-card .label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #64748b; }
+.stat-card .value { display: block; font-size: 24px; font-weight: 700; margin-top: 10px; color: var(--primary); }
+.main-chart-card {
+    background: white;
+    border-radius: 24px;
+    padding: 25px;
+}
+.chart-container { height: 450px; position: relative; }
+</style>
+</head>
+<body>
+
+<div class="weather-link-btn" onclick="goToWebsite()">
+<svg viewBox="0 0 64 64" fill="white">
+    <circle cx="42" cy="22" r="10" fill="#facc15"/>
+    <circle cx="28" cy="34" r="12"/>
+    <circle cx="40" cy="34" r="14"/>
+    <rect x="18" y="34" width="32" height="12"/>
+</svg>
+</div>
+
+<div class="app-container">
+<header>
+<h1>แสดงค่าดาวเทียมและอากาศ</h1>
+<p style="color:#64748b;">แสดงค่าเฉลี่ยสะสมรายวัน</p>
+</header>
+
+<div class="config-panel">
+<div class="input-group">
+<label>เลือกข้อมูลสถานี (.html)</label>
+<input type="file" id="fileInput" accept=".html">
+</div>
+<button class="btn-analyze" onclick="processDailyData()">เริ่มการวิเคราะห์รายวัน</button>
+</div>
+
+<div class="stats-grid">
+<div class="stat-card"><span class="label">Avg Temp</span><span class="value" id="avgTemp">-</span></div>
+<div class="stat-card"><span class="label">Avg Humidity</span><span class="value" id="avgHumid">-</span></div>
+<div class="stat-card"><span class="label">Avg VPD</span><span class="value" id="avgVpd">-</span></div>
+<div class="stat-card"><span class="label">Total Rain</span><span class="value" id="totalRain">-</span></div>
+</div>
+
+<div class="main-chart-card">
+<div class="chart-container">
+<canvas id="dailyChart"></canvas>
+</div>
+</div>
+</div>
+
+<script>
+let db = [];
+let mainChart = null;
+
+// ฟังก์ชันเปิดเว็บ: ตรวจสอบให้แน่ใจว่าชื่อไฟล์ตรงกับหน้า Hourly
+function goToWebsite(){
+    window.open("nat index.html.html", "_blank"); 
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event){
+        const content = event.target.result;
+        
+        // ส่งข้อมูลไปเก็บในเครื่อง
+        localStorage.setItem('sharedWeatherData', content);
+
+        const doc = new DOMParser().parseFromString(content,'text/html');
+        const rows = doc.querySelectorAll('tr');
+        db = [];
+
+        rows.forEach(tr=>{
+            const tds = tr.querySelectorAll('td');
+            if (tds.length >= 5 && /^\d{4}-\d{2}-\d{2}/.test(tds[0].innerText)) {
+                db.push({
+                    date: tds[0].innerText.trim().split(' ')[0],
+                    temp: parseFloat(tds[1].innerText) || 0,
+                    vpd: parseFloat(tds[2].innerText) || 0,
+                    humid: parseFloat(tds[3].innerText) || 0,
+                    rain: parseFloat(tds[4].innerText) || 0
+                });
+            }
+        });
+        alert("✨ นำเข้าข้อมูลเรียบร้อย! กดรูปเมฆเพื่อดูข้อมูลรายชั่วโมงได้เลย");
+    };
+    reader.readAsText(file);
+});
+
+function processDailyData(){
+    if(db.length===0) return alert("กรุณาเลือกไฟล์ก่อน");
+    const dailyGroups = db.reduce((acc, curr) => {
+        if (!acc[curr.date]) acc[curr.date] = { t:[], h:[], v:[], r:0 };
+        acc[curr.date].t.push(curr.temp);
+        acc[curr.date].h.push(curr.humid);
+        acc[curr.date].v.push(curr.vpd);
+        acc[curr.date].r += curr.rain;
+        return acc;
+    }, {});
+    const labels = Object.keys(dailyGroups).sort();
+    const chartData = labels.map(d => ({
+        date: d,
+        avgT: dailyGroups[d].t.reduce((a,b)=>a+b,0)/dailyGroups[d].t.length,
+        avgH: dailyGroups[d].h.reduce((a,b)=>a+b,0)/dailyGroups[d].h.length,
+        avgV: dailyGroups[d].v.reduce((a,b)=>a+b,0)/dailyGroups[d].v.length,
+        totalR: dailyGroups[d].r
+    }));
+    const sumT = chartData.reduce((a,b)=>a+b.avgT,0)/chartData.length;
+    const sumH = chartData.reduce((a,b)=>a+b.avgH,0)/chartData.length;
+    const sumV = chartData.reduce((a,b)=>a+b.avgV,0)/chartData.length;
+    const sumR = chartData.reduce((a,b)=>a+b.totalR,0);
+    document.getElementById('avgTemp').innerText = sumT.toFixed(1)+"°C";
+    document.getElementById('avgHumid').innerText = sumH.toFixed(1)+"%";
+    document.getElementById('avgVpd').innerText = sumV.toFixed(2);
+    document.getElementById('totalRain').innerText = sumR.toFixed(1)+" mm";
+    renderChart(chartData);
+}
+
+function renderChart(cData){
+    const ctx=document.getElementById('dailyChart').getContext('2d');
+    if(mainChart)mainChart.destroy();
+    mainChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: cData.map(d=>d.date),
+            datasets: [
+                {label:'Temp (°C)', data:cData.map(d=>d.avgT), borderColor:'#f43f5e', tension:0.3},
+                {label:'Humidity (%)', data:cData.map(d=>d.avgH), borderColor:'#0ea5e9', tension:0.3},
+                {label:'VPD', data:cData.map(d=>d.avgV), borderColor:'#f59e0b', tension:0.3},
+                {label:'Rain (mm)', type:'bar', data:cData.map(d=>d.totalR), backgroundColor:'rgba(99,102,241,0.3)'}
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+</script>
+</body>
+</html>
